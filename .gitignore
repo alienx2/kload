@@ -1,0 +1,7 @@
+# PHP
+.phpunit.result.cache
+/vendor/
+
+# OS files
+.DS_Store
+Thumbs.db
