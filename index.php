@@ -15,13 +15,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $date = $_POST['date'] ?? '';
         $units = $_POST['units'] ?? 0;
         $cost = $_POST['cost'] ?? 0;
+        $kwh_cost = $_POST['kwh_cost'] ?? 0;
+        $balance = $_POST['balance'] ?? 0;
 
         if ($date && $units !== '') {
             $data = json_decode(file_get_contents($dataFile), true);
             $data[] = [
                 'date' => $date,
                 'units' => (float)$units,
-                'cost' => (float)$cost
+                'cost' => (float)$cost,
+                'kwh_cost' => (float)$kwh_cost,
+                'balance' => (float)$balance
             ];
             // Sort by date descending
             usort($data, function($a, $b) {
@@ -95,8 +99,16 @@ $bills = json_decode(file_get_contents($dataFile), true);
                 <input type="number" id="units" name="units" step="0.01" required placeholder="e.g. 5.5">
             </div>
             <div class="form-group">
-                <label for="cost">Amount Spent / Load Credit (₱):</label>
+                <label for="kwh_cost">Cost per kWh (₱):</label>
+                <input type="number" id="kwh_cost" name="kwh_cost" step="0.01" placeholder="e.g. 12.50">
+            </div>
+            <div class="form-group">
+                <label for="cost">Amount Spent / Load Top-up (₱):</label>
                 <input type="number" id="cost" name="cost" step="0.01" placeholder="e.g. 100.00">
+            </div>
+            <div class="form-group">
+                <label for="balance">Remaining Balance (₱):</label>
+                <input type="number" id="balance" name="balance" step="0.01" placeholder="e.g. 450.75">
             </div>
             <button type="submit" name="add_bill">Save Entry</button>
         </form>
@@ -108,19 +120,23 @@ $bills = json_decode(file_get_contents($dataFile), true);
             <thead>
                 <tr>
                     <th>Date</th>
-                    <th>Consumption (kWh)</th>
-                    <th>Amount (₱)</th>
+                    <th>Consumption</th>
+                    <th>Cost/kWh</th>
+                    <th>Top-up</th>
+                    <th>Balance</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($bills)): ?>
-                    <tr><td colspan="3">No records found.</td></tr>
+                    <tr><td colspan="5">No records found.</td></tr>
                 <?php else: ?>
                     <?php foreach ($bills as $bill): ?>
                         <tr>
                             <td><?php echo htmlspecialchars($bill['date']); ?></td>
                             <td><?php echo htmlspecialchars($bill['units']); ?> kWh</td>
+                            <td>₱<?php echo number_format($bill['kwh_cost'] ?? 0, 2); ?></td>
                             <td>₱<?php echo number_format($bill['cost'] ?? 0, 2); ?></td>
+                            <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -133,8 +149,9 @@ $bills = json_decode(file_get_contents($dataFile), true);
         <form method="POST">
             <div class="form-group">
                 <label for="json_data">Paste your backup JSON here:</label>
-                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "units": 5.2, "cost": 50.00}]'></textarea>
+                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "units": 5.2, "kwh_cost": 12.5, "cost": 0, "balance": 450.75}]'></textarea>
             </div>
+
             <button type="submit" name="import_json" style="background: #34495e;">Import Backup</button>
         </form>
         <p><small>Note: This will replace all current data with the imported data.</small></p>
