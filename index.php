@@ -49,6 +49,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $bills = json_decode(file_get_contents($dataFile), true);
+
+// Group bills by month
+$groupedBills = [];
+foreach ($bills as $bill) {
+    $monthKey = date('Y-m', strtotime($bill['date']));
+    $monthName = date('F Y', strtotime($bill['date']));
+    if (!isset($groupedBills[$monthKey])) {
+        $groupedBills[$monthKey] = [
+            'name' => $monthName,
+            'entries' => [],
+            'total_units' => 0,
+            'total_cost' => 0
+        ];
+    }
+    $groupedBills[$monthKey]['entries'][] = $bill;
+    $groupedBills[$monthKey]['total_units'] += $bill['units'];
+    $groupedBills[$monthKey]['total_cost'] += $bill['cost'];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -72,6 +90,8 @@ $bills = json_decode(file_get_contents($dataFile), true);
         .section { margin-top: 40px; border-top: 2px solid #eee; padding-top: 20px; }
         .meralco-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
         .meralco-logo { color: #f36f21; font-weight: 800; font-size: 1.5rem; }
+        .month-header { background-color: #f0f4f8; border-bottom: 2px solid #d1d8e0; }
+        .month-header td { padding: 8px 12px; }
     </style>
 </head>
 <body>
@@ -127,17 +147,28 @@ $bills = json_decode(file_get_contents($dataFile), true);
                 </tr>
             </thead>
             <tbody>
-                <?php if (empty($bills)): ?>
+                <?php if (empty($groupedBills)): ?>
                     <tr><td colspan="5">No records found.</td></tr>
                 <?php else: ?>
-                    <?php foreach ($bills as $bill): ?>
-                        <tr>
-                            <td><?php echo htmlspecialchars($bill['date']); ?></td>
-                            <td><?php echo htmlspecialchars($bill['units']); ?> kWh</td>
-                            <td>₱<?php echo number_format($bill['kwh_cost'] ?? 0, 2); ?></td>
-                            <td>₱<?php echo number_format($bill['cost'] ?? 0, 2); ?></td>
-                            <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
+                    <?php foreach ($groupedBills as $month): ?>
+                        <tr class="month-header">
+                            <td colspan="5">
+                                <strong><?php echo htmlspecialchars($month['name']); ?></strong>
+                                <span style="float: right; font-size: 0.85em; font-weight: normal;">
+                                    Total: <?php echo number_format($month['total_units'], 2); ?> kWh | 
+                                    Top-ups: ₱<?php echo number_format($month['total_cost'], 2); ?>
+                                </span>
+                            </td>
                         </tr>
+                        <?php foreach ($month['entries'] as $bill): ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($bill['date']); ?></td>
+                                <td><?php echo htmlspecialchars($bill['units']); ?> kWh</td>
+                                <td>₱<?php echo number_format($bill['kwh_cost'] ?? 0, 2); ?></td>
+                                <td>₱<?php echo number_format($bill['cost'] ?? 0, 2); ?></td>
+                                <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
                     <?php endforeach; ?>
                 <?php endif; ?>
             </tbody>
