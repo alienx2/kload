@@ -127,6 +127,10 @@ foreach ($bills as $bill) {
         .high-usage::after { content: " 🚩"; }
         .avg-info { background: #e9f7ef; padding: 10px; border-radius: 4px; margin-bottom: 20px; display: inline-block; border-left: 4px solid #27ae60; }
         .comments-cell { font-size: 0.9em; color: #666; font-style: italic; }
+        .edit-btn { background: #3498db; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 0.8em; cursor: pointer; border: none; margin-left: 10px; }
+        .edit-btn:hover { background: #2980b9; }
+        .form-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .reset-link { font-size: 0.8em; color: #7f8c8d; text-decoration: underline; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -147,8 +151,11 @@ foreach ($bills as $bill) {
     </div>
 
     <div class="container">
-        <h2>Add Daily Usage / Load</h2>
-        <form method="POST">
+        <div class="form-header">
+            <h2 id="form-title">Add / Edit Entry</h2>
+            <span class="reset-link" onclick="resetForm()">Clear / New Entry</span>
+        </div>
+        <form method="POST" id="bill-form">
             <div class="form-group">
                 <label for="date">Date:</label>
                 <input type="date" id="date" name="date" required value="<?php echo date('Y-m-d'); ?>">
@@ -167,7 +174,7 @@ foreach ($bills as $bill) {
             </div>
             <div class="form-group">
                 <label for="comments">Comments / Notes:</label>
-                <textarea id="comments" name="comments" rows="2" placeholder="e.g. Used AC all day, heavy laundry..."></textarea>
+                <textarea id="comments" name="comments" rows="2" placeholder="e.g. Used AC all day..."></textarea>
             </div>
             <button type="submit" name="add_bill">Save Entry</button>
         </form>
@@ -209,7 +216,10 @@ foreach ($bills as $bill) {
                                     ₱<?php echo number_format($bill['daily_cost'], 2); ?>
                                 </td>
                                 <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
-                                <td class="comments-cell"><?php echo htmlspecialchars($bill['comments'] ?? ''); ?></td>
+                                <td class="comments-cell">
+                                    <?php echo htmlspecialchars($bill['comments'] ?? ''); ?>
+                                    <button class="edit-btn" onclick="editEntry('<?php echo $bill['date']; ?>', <?php echo $bill['kwh_total']; ?>, <?php echo $bill['cost_per_kwh']; ?>, <?php echo $bill['balance'] ?? 0; ?>, <?php echo htmlspecialchars(json_encode($bill['comments'] ?? '')); ?>)">Edit</button>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endforeach; ?>
@@ -240,6 +250,28 @@ foreach ($bills as $bill) {
         <pre style="background: #eee; padding: 15px; border-radius: 4px; overflow-x: auto;"><?php echo htmlspecialchars(json_encode($bills, JSON_PRETTY_PRINT)); ?></pre>
     </div>
 
+    <script>
+        function editEntry(date, kwh, rate, balance, comments) {
+            document.getElementById('date').value = date;
+            document.getElementById('kwh_total').value = kwh;
+            document.getElementById('cost_per_kwh').value = rate;
+            document.getElementById('balance').value = balance;
+            document.getElementById('comments').value = comments;
+            
+            // Highlight the form
+            document.getElementById('form-title').innerText = "Editing Entry: " + date;
+            document.getElementById('bill-form').scrollIntoView({ behavior: 'smooth' });
+            document.getElementById('comments').focus();
+        }
+
+        function resetForm() {
+            document.getElementById('bill-form').reset();
+            document.getElementById('form-title').innerText = "Add / Edit Entry";
+            // Restore current date as default
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('date').value = today;
+        }
+    </script>
 
 </body>
 </html>
