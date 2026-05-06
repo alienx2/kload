@@ -13,24 +13,34 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_bill'])) {
         $date = $_POST['date'] ?? '';
-        $cost = $_POST['cost'] ?? 0;
         $kwh_cost = $_POST['kwh_cost'] ?? 0;
+        $cost_per_kwh = $_POST['cost_per_kwh'] ?? 0;
         $balance = $_POST['balance'] ?? 0;
 
         if ($date) {
             $data = json_decode(file_get_contents($dataFile), true);
-            $data[] = [
+            
+            // Overwrite logic: Use date as key temporarily
+            $indexedData = [];
+            foreach ($data as $entry) {
+                $indexedData[$entry['date']] = $entry;
+            }
+            
+            $indexedData[$date] = [
                 'date' => $date,
-                'cost' => (float)$cost,
                 'kwh_cost' => (float)$kwh_cost,
+                'cost_per_kwh' => (float)$cost_per_kwh,
                 'balance' => (float)$balance
             ];
-            // Sort by date descending
+
+            // Convert back to array and sort
+            $data = array_values($indexedData);
             usort($data, function($a, $b) {
                 return strcmp($b['date'], $a['date']);
             });
+            
             file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT));
-            $message = "Entry added successfully!";
+            $message = "Entry saved successfully!";
         } else {
             $error = "Date is required.";
         }
@@ -57,11 +67,11 @@ foreach ($bills as $bill) {
         $groupedBills[$monthKey] = [
             'name' => $monthName,
             'entries' => [],
-            'total_cost' => 0
+            'total_kwh_cost' => 0
         ];
     }
     $groupedBills[$monthKey]['entries'][] = $bill;
-    $groupedBills[$monthKey]['total_cost'] += ($bill['cost'] ?? 0);
+    $groupedBills[$monthKey]['total_kwh_cost'] += ($bill['kwh_cost'] ?? 0);
 }
 ?>
 <!DOCTYPE html>
@@ -111,12 +121,12 @@ foreach ($bills as $bill) {
                 <input type="date" id="date" name="date" required value="<?php echo date('Y-m-d'); ?>">
             </div>
             <div class="form-group">
-                <label for="kwh_cost">Cost per kWh (₱):</label>
-                <input type="number" id="kwh_cost" name="kwh_cost" step="0.01" placeholder="e.g. 12.50">
+                <label for="kwh_cost">Daily Consumption Cost (₱):</label>
+                <input type="number" id="kwh_cost" name="kwh_cost" step="0.01" placeholder="e.g. 50.00">
             </div>
             <div class="form-group">
-                <label for="cost">Amount Spent / Load Top-up (₱):</label>
-                <input type="number" id="cost" name="cost" step="0.01" placeholder="e.g. 100.00">
+                <label for="cost_per_kwh">Rate per kWh (₱):</label>
+                <input type="number" id="cost_per_kwh" name="cost_per_kwh" step="0.01" placeholder="e.g. 12.50">
             </div>
             <div class="form-group">
                 <label for="balance">Remaining Balance (₱):</label>
@@ -132,8 +142,8 @@ foreach ($bills as $bill) {
             <thead>
                 <tr>
                     <th>Date</th>
-                    <th>Cost/kWh</th>
-                    <th>Top-up</th>
+                    <th>Daily Cost</th>
+                    <th>Rate/kWh</th>
                     <th>Balance</th>
                 </tr>
             </thead>
@@ -146,7 +156,7 @@ foreach ($bills as $bill) {
                             <td colspan="4">
                                 <strong><?php echo htmlspecialchars($month['name']); ?></strong>
                                 <span style="float: right; font-size: 0.85em; font-weight: normal;">
-                                    Total Top-ups: ₱<?php echo number_format($month['total_cost'], 2); ?>
+                                    Total Daily Costs: ₱<?php echo number_format($month['total_kwh_cost'], 2); ?>
                                 </span>
                             </td>
                         </tr>
@@ -154,7 +164,7 @@ foreach ($bills as $bill) {
                             <tr>
                                 <td><?php echo htmlspecialchars($bill['date']); ?></td>
                                 <td>₱<?php echo number_format($bill['kwh_cost'] ?? 0, 2); ?></td>
-                                <td>₱<?php echo number_format($bill['cost'] ?? 0, 2); ?></td>
+                                <td>₱<?php echo number_format($bill['cost_per_kwh'] ?? 0, 2); ?></td>
                                 <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
                             </tr>
                         <?php endforeach; ?>
@@ -169,8 +179,9 @@ foreach ($bills as $bill) {
         <form method="POST">
             <div class="form-group">
                 <label for="json_data">Paste your backup JSON here:</label>
-                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "kwh_cost": 12.5, "cost": 0, "balance": 450.75}]'></textarea>
+                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "kwh_cost": 50.0, "cost_per_kwh": 12.5, "balance": 450.75}]'></textarea>
             </div>
+
 
 
             <button type="submit" name="import_json" style="background: #34495e;">Import Backup</button>
