@@ -15,7 +15,7 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_bill'])) {
         $date = $_POST['date'] ?? '';
-        $kwh_left = $_POST['kwh_left'] ?? 0;
+        $kwh_cost = $_POST['kwh_cost'] ?? 0;
         $cost_per_kwh = $_POST['cost_per_kwh'] ?? 0;
         $balance = $_POST['balance'] ?? 0;
         $comments = $_POST['comments'] ?? '';
@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $indexedData[$date] = [
                 'date' => $date,
-                'kwh_left' => (float)$kwh_left,
+                'kwh_cost' => (float)$kwh_cost,
                 'cost_per_kwh' => (float)$cost_per_kwh,
                 'balance' => (float)$balance,
                 'comments' => $comments
@@ -63,27 +63,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $jsonInput = $_POST['json_data'] ?? '';
         $decoded = json_decode($jsonInput, true);
         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-            // Group by year and save to respective files
-            $yearsData = [];
+            // Group incoming data by year
+            $incomingByYear = [];
             foreach ($decoded as $entry) {
                 if (empty($entry['date'])) continue;
                 $year = date('Y', strtotime($entry['date']));
-                $yearsData[$year][] = [
+                $incomingByYear[$year][] = [
                     'date' => $entry['date'],
-                    'kwh_left' => (float)($entry['kwh_left'] ?? $entry['kwh_total'] ?? $entry['kwh_cost'] ?? 0),
+                    'kwh_cost' => (float)($entry['kwh_cost'] ?? $entry['kwh_left'] ?? $entry['kwh_total'] ?? 0),
                     'cost_per_kwh' => (float)($entry['cost_per_kwh'] ?? 0),
                     'balance' => (float)($entry['balance'] ?? 0),
                     'comments' => (string)($entry['comments'] ?? '')
                 ];
             }
             
-            foreach ($yearsData as $year => $yearItems) {
-                usort($yearItems, function($a, $b) {
+            // Merge into existing files
+            foreach ($incomingByYear as $year => $incomingItems) {
+                $targetFile = $year . '.json';
+                $existingData = [];
+                if (file_exists($targetFile)) {
+                    $existingData = json_decode(file_get_contents($targetFile), true) ?: [];
+                }
+                
+                // Index existing data by date for merging
+                $mergedData = [];
+                foreach ($existingData as $item) {
+                    $mergedData[$item['date']] = $item;
+                }
+                
+                // Add/Overwrite with incoming items
+                foreach ($incomingItems as $item) {
+                    $mergedData[$item['date']] = $item;
+                }
+                
+                // Convert back to indexed array and sort
+                $finalData = array_values($mergedData);
+                usort($finalData, function($a, $b) {
                     return strcmp($b['date'], $a['date']);
                 });
-                file_put_contents($year . '.json', json_encode($yearItems, JSON_PRETTY_PRINT));
+                
+                file_put_contents($targetFile, json_encode($finalData, JSON_PRETTY_PRINT));
             }
-            $message = "Data imported and split by year successfully!";
+            $message = "Data merged successfully!";
         } else {
             $error = "Invalid JSON format.";
         }
@@ -219,8 +240,8 @@ foreach ($bills as $bill) {
                 <input type="date" id="date" name="date" required value="<?php echo date('Y-m-d'); ?>">
             </div>
             <div class="form-group">
-                <label for="kwh_left">kWh Available Left:</label>
-                <input type="number" id="kwh_left" name="kwh_left" step="0.01" required placeholder="e.g. 824.55">
+                <label for="kwh_cost">kWh Available Left:</label>
+                <input type="number" id="kwh_cost" name="kwh_cost" step="0.01" required placeholder="e.g. 824.55">
             </div>
             <div class="form-group">
                 <label for="cost_per_kwh">Rate per kWh (₱):</label>
@@ -268,7 +289,7 @@ foreach ($bills as $bill) {
                             <?php $isHigh = ($bill['daily_cost'] !== null && $bill['daily_cost'] > 300); ?>
                             <tr>
                                 <td><?php echo htmlspecialchars($bill['date']); ?></td>
-                                <td><?php echo number_format($bill['kwh_left'] ?? 0, 2); ?> kWh</td>
+                                <td><?php echo number_format($bill['kwh_cost'] ?? 0, 2); ?> kWh</td>
                                 <td>₱<?php echo number_format($bill['cost_per_kwh'] ?? 0, 2); ?></td>
                                 <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
                                 <td class="<?php echo $isHigh ? 'high-usage' : ''; ?>">
@@ -280,7 +301,7 @@ foreach ($bills as $bill) {
                                 </td>
                                 <td class="comments-cell">
                                     <?php echo htmlspecialchars($bill['comments'] ?? ''); ?>
-                                    <button class="edit-btn" onclick="editEntry('<?php echo $bill['date']; ?>', <?php echo $bill['kwh_left'] ?? 0; ?>, <?php echo $bill['cost_per_kwh'] ?? 0; ?>, <?php echo $bill['balance'] ?? 0; ?>, <?php echo htmlspecialchars(json_encode($bill['comments'] ?? '')); ?>)">Edit</button>
+                                    <button class="edit-btn" onclick="editEntry('<?php echo $bill['date']; ?>', <?php echo $bill['kwh_cost'] ?? 0; ?>, <?php echo $bill['cost_per_kwh'] ?? 0; ?>, <?php echo $bill['balance'] ?? 0; ?>, <?php echo htmlspecialchars(json_encode($bill['comments'] ?? '')); ?>)">Edit</button>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -295,11 +316,11 @@ foreach ($bills as $bill) {
         <form method="POST">
             <div class="form-group">
                 <label for="json_data">Paste your backup JSON here:</label>
-                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "kwh_left": 824.55, "cost_per_kwh": 14.17, "balance": 11679.82, "comments": "Normal usage"}]'></textarea>
+                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "kwh_cost": 824.55, "cost_per_kwh": 14.17, "balance": 11679.82, "comments": "Normal usage"}]'></textarea>
             </div>
             <button type="submit" name="import_json" style="background: #34495e;">Import Backup</button>
         </form>
-        <p><small>Note: This will replace all current data with the imported data.</small></p>
+        <p><small>Note: This will merge new data with your current records. Matching dates will be updated.</small></p>
     </div>
 
     <div class="section">
@@ -310,7 +331,7 @@ foreach ($bills as $bill) {
     <script>
         function editEntry(date, kwh, rate, balance, comments) {
             document.getElementById('date').value = date;
-            document.getElementById('kwh_left').value = kwh;
+            document.getElementById('kwh_cost').value = kwh;
             document.getElementById('cost_per_kwh').value = rate;
             document.getElementById('balance').value = balance;
             document.getElementById('comments').value = comments;
