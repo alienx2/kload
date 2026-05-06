@@ -1,5 +1,7 @@
 <?php
-$dataFile = 'data.json';
+// Determine selected year for viewing
+$viewYear = $_GET['year'] ?? date('Y');
+$dataFile = $viewYear . '.json';
 
 // Initialize data file if it doesn't exist
 if (!file_exists($dataFile)) {
@@ -19,7 +21,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $comments = $_POST['comments'] ?? '';
 
         if ($date) {
-            $data = json_decode(file_get_contents($dataFile), true);
+            $yearOfEntry = date('Y', strtotime($date));
+            $targetFile = $yearOfEntry . '.json';
+            
+            if (!file_exists($targetFile)) {
+                file_put_contents($targetFile, json_encode([]));
+            }
+
+            $data = json_decode(file_get_contents($targetFile), true);
             
             // Overwrite logic
             $indexedData = [];
@@ -40,7 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 return strcmp($b['date'], $a['date']);
             });
             
-            file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT));
+            file_put_contents($targetFile, json_encode($data, JSON_PRETTY_PRINT));
+            
+            if ($yearOfEntry != $viewYear) {
+                header("Location: ?year=$yearOfEntry&msg=Entry saved to $yearOfEntry records.");
+                exit;
+            }
             $message = "Entry saved successfully!";
         } else {
             $error = "Date is required.";
@@ -49,10 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $jsonInput = $_POST['json_data'] ?? '';
         $decoded = json_decode($jsonInput, true);
         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-            $sanitized = [];
+            // Group by year and save to respective files
+            $yearsData = [];
             foreach ($decoded as $entry) {
                 if (empty($entry['date'])) continue;
-                $sanitized[] = [
+                $year = date('Y', strtotime($entry['date']));
+                $yearsData[$year][] = [
                     'date' => $entry['date'],
                     'kwh_total' => (float)($entry['kwh_total'] ?? $entry['kwh_cost'] ?? 0),
                     'cost_per_kwh' => (float)($entry['cost_per_kwh'] ?? 0),
@@ -60,21 +76,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'comments' => (string)($entry['comments'] ?? '')
                 ];
             }
-            usort($sanitized, function($a, $b) {
-                return strcmp($b['date'], $a['date']);
-            });
-            file_put_contents($dataFile, json_encode($sanitized, JSON_PRETTY_PRINT));
-            $message = "Data imported successfully!";
+            
+            foreach ($yearsData as $year => $yearItems) {
+                usort($yearItems, function($a, $b) {
+                    return strcmp($b['date'], $a['date']);
+                });
+                file_put_contents($year . '.json', json_encode($yearItems, JSON_PRETTY_PRINT));
+            }
+            $message = "Data imported and split by year successfully!";
         } else {
             $error = "Invalid JSON format.";
         }
     }
 }
 
+if (isset($_GET['msg'])) $message = $_GET['msg'];
+
 $bills = json_decode(file_get_contents($dataFile), true);
 
+// Get list of available years (json files)
+$availableYears = [];
+foreach (glob("*.json") as $filename) {
+    $y = str_replace('.json', '', basename($filename));
+    if (is_numeric($y)) {
+        $availableYears[] = $y;
+    }
+}
+rsort($availableYears);
+
 // Pre-calculate computed daily costs based on balance difference
-// Since bills are sorted DESC by date, the "previous day" is $bills[$i+1]
 $totalCosts = 0;
 $validCostCount = 0;
 for ($i = 0; $i < count($bills); $i++) {
@@ -83,13 +113,10 @@ for ($i = 0; $i < count($bills); $i++) {
     
     if ($previousBalance !== null) {
         $diff = $previousBalance - $currentBalance;
-        // If diff is negative, it's a top-up. 
-        // We'll show the actual diff as requested: Balance[-1] - Balance[Current]
         $bills[$i]['daily_cost'] = $diff;
         $totalCosts += $diff;
         $validCostCount++;
     } else {
-        // First entry chronologically (last in array) has no previous balance
         $bills[$i]['daily_cost'] = 0;
     }
 }
@@ -158,8 +185,21 @@ foreach ($bills as $bill) {
         <p class="error"><?php echo $error; ?></p>
     <?php endif; ?>
 
-    <div class="avg-info">
-        Current Average Daily Cost: <strong>₱<?php echo number_format($averageCost, 2); ?></strong>
+    <div style="display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px;">
+        <div class="avg-info" style="margin-bottom: 0;">
+            Current Average Daily Cost (<?php echo $viewYear; ?>): <strong>₱<?php echo number_format($averageCost, 2); ?></strong>
+        </div>
+
+        <div class="container" style="flex: 1; padding: 10px 20px;">
+            <label>View Year:</label>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px;">
+                <?php foreach ($availableYears as $year): ?>
+                    <a href="?year=<?php echo $year; ?>" style="text-decoration: none; padding: 5px 10px; border-radius: 4px; background: <?php echo ($year == $viewYear) ? '#f36f21' : '#eee'; ?>; color: <?php echo ($year == $viewYear) ? '#fff' : '#333'; ?>; font-weight: bold; font-size: 0.9em;">
+                        <?php echo $year; ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </div>
     </div>
 
     <div class="container">
@@ -193,21 +233,21 @@ foreach ($bills as $bill) {
     </div>
 
     <div class="section">
-        <h2>Consumption History</h2>
+        <h2>Consumption History (<?php echo $viewYear; ?>)</h2>
         <table>
             <thead>
                 <tr>
                     <th>Date</th>
                     <th>kWh Used</th>
                     <th>Rate/kWh</th>
-                    <th>Daily Cost</th>
                     <th>Balance</th>
+                    <th>Daily Cost</th>
                     <th>Comments</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($groupedBills)): ?>
-                    <tr><td colspan="6">No records found.</td></tr>
+                    <tr><td colspan="6">No records found for <?php echo $viewYear; ?>.</td></tr>
                 <?php else: ?>
                     <?php foreach ($groupedBills as $month): ?>
                         <tr class="month-header">
@@ -224,10 +264,10 @@ foreach ($bills as $bill) {
                                 <td><?php echo htmlspecialchars($bill['date']); ?></td>
                                 <td><?php echo number_format($bill['kwh_total'] ?? 0, 2); ?> kWh</td>
                                 <td>₱<?php echo number_format($bill['cost_per_kwh'] ?? 0, 2); ?></td>
+                                <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
                                 <td class="<?php echo $isHigh ? 'high-usage' : ''; ?>">
                                     ₱<?php echo number_format($bill['daily_cost'], 2); ?>
                                 </td>
-                                <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
                                 <td class="comments-cell">
                                     <?php echo htmlspecialchars($bill['comments'] ?? ''); ?>
                                     <button class="edit-btn" onclick="editEntry('<?php echo $bill['date']; ?>', <?php echo $bill['kwh_total']; ?>, <?php echo $bill['cost_per_kwh']; ?>, <?php echo $bill['balance'] ?? 0; ?>, <?php echo htmlspecialchars(json_encode($bill['comments'] ?? '')); ?>)">Edit</button>
