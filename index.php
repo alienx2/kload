@@ -73,15 +73,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $bills = json_decode(file_get_contents($dataFile), true);
 
-// Pre-calculate computed daily costs
+// Pre-calculate computed daily costs based on balance difference
+// Since bills are sorted DESC by date, the "previous day" is $bills[$i+1]
 $totalCosts = 0;
-$count = count($bills);
-foreach ($bills as &$bill) {
-    $bill['daily_cost'] = ($bill['kwh_total'] ?? 0) * ($bill['cost_per_kwh'] ?? 0);
-    $totalCosts += $bill['daily_cost'];
+$validCostCount = 0;
+for ($i = 0; $i < count($bills); $i++) {
+    $currentBalance = $bills[$i]['balance'] ?? 0;
+    $previousBalance = (isset($bills[$i+1])) ? ($bills[$i+1]['balance'] ?? 0) : null;
+    
+    if ($previousBalance !== null) {
+        $diff = $previousBalance - $currentBalance;
+        // If diff is negative, it's a top-up. 
+        // We'll show the actual diff as requested: Balance[-1] - Balance[Current]
+        $bills[$i]['daily_cost'] = $diff;
+        $totalCosts += $diff;
+        $validCostCount++;
+    } else {
+        // First entry chronologically (last in array) has no previous balance
+        $bills[$i]['daily_cost'] = 0;
+    }
 }
-unset($bill);
-$averageCost = $count > 0 ? $totalCosts / $count : 0;
+$averageCost = $validCostCount > 0 ? $totalCosts / $validCostCount : 0;
 
 // Group bills by month
 $groupedBills = [];
