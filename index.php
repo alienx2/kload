@@ -50,12 +50,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $jsonInput = $_POST['json_data'] ?? '';
         $decoded = json_decode($jsonInput, true);
         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-            // Sort imported data by date descending
-            usort($decoded, function($a, $b) {
+            $sanitized = [];
+            foreach ($decoded as $entry) {
+                if (empty($entry['date'])) continue;
+                $sanitized[] = [
+                    'date' => $entry['date'],
+                    'kwh_cost' => (float)($entry['kwh_cost'] ?? 0),
+                    'cost_per_kwh' => (float)($entry['cost_per_kwh'] ?? 0),
+                    'balance' => (float)($entry['balance'] ?? 0),
+                    'comments' => (string)($entry['comments'] ?? '')
+                ];
+            }
+            // Sort by date descending
+            usort($sanitized, function($a, $b) {
                 return strcmp($b['date'], $a['date']);
             });
-            file_put_contents($dataFile, json_encode($decoded, JSON_PRETTY_PRINT));
-            $message = "Data imported successfully!";
+            file_put_contents($dataFile, json_encode($sanitized, JSON_PRETTY_PRINT));
+            $message = "Data imported and sanitized successfully!";
         } else {
             $error = "Invalid JSON format.";
         }
