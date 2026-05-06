@@ -48,6 +48,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $jsonInput = $_POST['json_data'] ?? '';
         $decoded = json_decode($jsonInput, true);
         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            // Sort imported data by date descending
+            usort($decoded, function($a, $b) {
+                return strcmp($b['date'], $a['date']);
+            });
             file_put_contents($dataFile, json_encode($decoded, JSON_PRETTY_PRINT));
             $message = "Data imported successfully!";
         } else {
