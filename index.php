@@ -16,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $kwh_cost = $_POST['kwh_cost'] ?? 0;
         $cost_per_kwh = $_POST['cost_per_kwh'] ?? 0;
         $balance = $_POST['balance'] ?? 0;
+        $comments = $_POST['comments'] ?? '';
 
         if ($date) {
             $data = json_decode(file_get_contents($dataFile), true);
@@ -30,7 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'date' => $date,
                 'kwh_cost' => (float)$kwh_cost,
                 'cost_per_kwh' => (float)$cost_per_kwh,
-                'balance' => (float)$balance
+                'balance' => (float)$balance,
+                'comments' => $comments
             ];
 
             // Convert back to array and sort
@@ -62,6 +64,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $bills = json_decode(file_get_contents($dataFile), true);
 
+// Calculate overall average daily cost
+$totalCosts = 0;
+$count = count($bills);
+foreach ($bills as $bill) {
+    $totalCosts += ($bill['kwh_cost'] ?? 0);
+}
+$averageCost = $count > 0 ? $totalCosts / $count : 0;
+
 // Group bills by month
 $groupedBills = [];
 foreach ($bills as $bill) {
@@ -85,7 +95,7 @@ foreach ($bills as $bill) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Meralco Kuryente Load Tracker</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 20px auto; padding: 0 20px; line-height: 1.6; color: #333; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 20px; line-height: 1.6; color: #333; }
         .container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border: 1px solid #ddd; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
@@ -93,7 +103,7 @@ foreach ($bills as $bill) {
         button { background: #f36f21; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
         button:hover { background: #d35400; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #fff; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; vertical-align: top; }
         th { background-color: #f8f9fa; color: #555; }
         .message { color: #27ae60; font-weight: bold; margin-bottom: 15px; }
         .error { color: #e74c3c; font-weight: bold; margin-bottom: 15px; }
@@ -102,6 +112,10 @@ foreach ($bills as $bill) {
         .meralco-logo { color: #f36f21; font-weight: 800; font-size: 1.5rem; }
         .month-header { background-color: #f0f4f8; border-bottom: 2px solid #d1d8e0; }
         .month-header td { padding: 8px 12px; }
+        .high-usage { color: #e74c3c; font-weight: bold; }
+        .high-usage::after { content: " 🚩"; }
+        .avg-info { background: #e9f7ef; padding: 10px; border-radius: 4px; margin-bottom: 20px; display: inline-block; border-left: 4px solid #27ae60; }
+        .comments-cell { font-size: 0.9em; color: #666; font-style: italic; }
     </style>
 </head>
 <body>
@@ -116,6 +130,10 @@ foreach ($bills as $bill) {
     <?php if ($error): ?>
         <p class="error"><?php echo $error; ?></p>
     <?php endif; ?>
+
+    <div class="avg-info">
+        Current Average Daily Cost: <strong>₱<?php echo number_format($averageCost, 2); ?></strong>
+    </div>
 
     <div class="container">
         <h2>Add Daily Usage / Load</h2>
@@ -136,6 +154,10 @@ foreach ($bills as $bill) {
                 <label for="balance">Remaining Balance (₱):</label>
                 <input type="number" id="balance" name="balance" step="0.01" placeholder="e.g. 450.75">
             </div>
+            <div class="form-group">
+                <label for="comments">Comments / Notes:</label>
+                <textarea id="comments" name="comments" rows="2" placeholder="e.g. Used AC all day, heavy laundry..."></textarea>
+            </div>
             <button type="submit" name="add_bill">Save Entry</button>
         </form>
     </div>
@@ -149,15 +171,16 @@ foreach ($bills as $bill) {
                     <th>Daily Cost</th>
                     <th>Rate/kWh</th>
                     <th>Balance</th>
+                    <th>Comments</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($groupedBills)): ?>
-                    <tr><td colspan="4">No records found.</td></tr>
+                    <tr><td colspan="5">No records found.</td></tr>
                 <?php else: ?>
                     <?php foreach ($groupedBills as $month): ?>
                         <tr class="month-header">
-                            <td colspan="4">
+                            <td colspan="5">
                                 <strong><?php echo htmlspecialchars($month['name']); ?></strong>
                                 <span style="float: right; font-size: 0.85em; font-weight: normal;">
                                     Total Daily Costs: ₱<?php echo number_format($month['total_kwh_cost'], 2); ?>
@@ -165,11 +188,15 @@ foreach ($bills as $bill) {
                             </td>
                         </tr>
                         <?php foreach ($month['entries'] as $bill): ?>
+                            <?php $isHigh = ($bill['kwh_cost'] > $averageCost); ?>
                             <tr>
                                 <td><?php echo htmlspecialchars($bill['date']); ?></td>
-                                <td>₱<?php echo number_format($bill['kwh_cost'] ?? 0, 2); ?></td>
+                                <td class="<?php echo $isHigh ? 'high-usage' : ''; ?>">
+                                    ₱<?php echo number_format($bill['kwh_cost'] ?? 0, 2); ?>
+                                </td>
                                 <td>₱<?php echo number_format($bill['cost_per_kwh'] ?? 0, 2); ?></td>
                                 <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
+                                <td class="comments-cell"><?php echo htmlspecialchars($bill['comments'] ?? ''); ?></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endforeach; ?>
@@ -183,8 +210,9 @@ foreach ($bills as $bill) {
         <form method="POST">
             <div class="form-group">
                 <label for="json_data">Paste your backup JSON here:</label>
-                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "kwh_cost": 50.0, "cost_per_kwh": 12.5, "balance": 450.75}]'></textarea>
+                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "kwh_cost": 50.0, "cost_per_kwh": 12.5, "balance": 450.75, "comments": "Heavy usage"}]'></textarea>
             </div>
+
 
 
 
