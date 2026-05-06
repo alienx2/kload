@@ -51,25 +51,30 @@ $bills = json_decode(file_get_contents($dataFile), true);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Electricity Daily Bill Tracker</title>
+    <title>Meralco Kuryente Load Tracker</title>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 0 20px; line-height: 1.6; }
-        .container { background: #f4f4f4; padding: 20px; border-radius: 8px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 20px auto; padding: 0 20px; line-height: 1.6; color: #333; }
+        .container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border: 1px solid #ddd; }
         .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; }
-        input[type="text"], input[type="date"], input[type="number"], textarea { width: 100%; padding: 8px; box-sizing: border-box; }
-        button { background: #007bff; color: #fff; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #0056b3; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .message { color: green; font-weight: bold; }
-        .error { color: red; font-weight: bold; }
-        .section { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="date"], input[type="number"], textarea { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #f36f21; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #d35400; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #fff; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f8f9fa; color: #555; }
+        .message { color: #27ae60; font-weight: bold; margin-bottom: 15px; }
+        .error { color: #e74c3c; font-weight: bold; margin-bottom: 15px; }
+        .section { margin-top: 40px; border-top: 2px solid #eee; padding-top: 20px; }
+        .meralco-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .meralco-logo { color: #f36f21; font-weight: 800; font-size: 1.5rem; }
     </style>
 </head>
 <body>
-    <h1>Electricity Daily Bill Tracker</h1>
+    <div class="meralco-header">
+        <div class="meralco-logo">Meralco Kuryente Load</div>
+        <h1>Daily Tracker</h1>
+    </div>
 
     <?php if ($message): ?>
         <p class="message"><?php echo $message; ?></p>
@@ -79,43 +84,43 @@ $bills = json_decode(file_get_contents($dataFile), true);
     <?php endif; ?>
 
     <div class="container">
-        <h2>Add Daily Bill</h2>
+        <h2>Add Daily Usage / Load</h2>
         <form method="POST">
             <div class="form-group">
                 <label for="date">Date:</label>
                 <input type="date" id="date" name="date" required value="<?php echo date('Y-m-d'); ?>">
             </div>
             <div class="form-group">
-                <label for="units">Units (kWh):</label>
-                <input type="number" id="units" name="units" step="0.01" required>
+                <label for="units">Units Consumed (kWh):</label>
+                <input type="number" id="units" name="units" step="0.01" required placeholder="e.g. 5.5">
             </div>
             <div class="form-group">
-                <label for="cost">Cost ($):</label>
-                <input type="number" id="cost" name="cost" step="0.01">
+                <label for="cost">Amount Spent / Load Credit (₱):</label>
+                <input type="number" id="cost" name="cost" step="0.01" placeholder="e.g. 100.00">
             </div>
-            <button type="submit" name="add_bill">Add Bill</button>
+            <button type="submit" name="add_bill">Save Entry</button>
         </form>
     </div>
 
     <div class="section">
-        <h2>History</h2>
+        <h2>Consumption History</h2>
         <table>
             <thead>
                 <tr>
                     <th>Date</th>
-                    <th>Units (kWh)</th>
-                    <th>Cost ($)</th>
+                    <th>Consumption (kWh)</th>
+                    <th>Amount (₱)</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($bills)): ?>
-                    <tr><td colspan="3">No data recorded yet.</td></tr>
+                    <tr><td colspan="3">No records found.</td></tr>
                 <?php else: ?>
                     <?php foreach ($bills as $bill): ?>
                         <tr>
                             <td><?php echo htmlspecialchars($bill['date']); ?></td>
-                            <td><?php echo htmlspecialchars($bill['units']); ?></td>
-                            <td><?php echo htmlspecialchars($bill['cost'] ?? 'N/A'); ?></td>
+                            <td><?php echo htmlspecialchars($bill['units']); ?> kWh</td>
+                            <td>₱<?php echo number_format($bill['cost'] ?? 0, 2); ?></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -124,21 +129,22 @@ $bills = json_decode(file_get_contents($dataFile), true);
     </div>
 
     <div class="section">
-        <h2>Import JSON Data</h2>
+        <h2>Import Data</h2>
         <form method="POST">
             <div class="form-group">
-                <label for="json_data">Paste JSON here (must be an array of objects):</label>
-                <textarea id="json_data" name="json_data" rows="10" placeholder='[{"date": "2024-05-01", "units": 10, "cost": 5}]'></textarea>
+                <label for="json_data">Paste your backup JSON here:</label>
+                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "units": 5.2, "cost": 50.00}]'></textarea>
             </div>
-            <button type="submit" name="import_json">Import Data</button>
+            <button type="submit" name="import_json" style="background: #34495e;">Import Backup</button>
         </form>
-        <p><small>Warning: Importing will overwrite existing data.</small></p>
+        <p><small>Note: This will replace all current data with the imported data.</small></p>
     </div>
 
     <div class="section">
-        <h2>Export Current Data</h2>
-        <pre><?php echo htmlspecialchars(json_encode($bills, JSON_PRETTY_PRINT)); ?></pre>
+        <h2>Current Data (JSON Export)</h2>
+        <pre style="background: #eee; padding: 15px; border-radius: 4px; overflow-x: auto;"><?php echo htmlspecialchars(json_encode($bills, JSON_PRETTY_PRINT)); ?></pre>
     </div>
+
 
 </body>
 </html>
