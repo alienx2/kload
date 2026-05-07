@@ -15,7 +15,7 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_bill'])) {
         $date = $_POST['date'] ?? '';
-        $kwh_cost = $_POST['kwh_cost'] ?? 0;
+        $kwh_total = $_POST['kwh_total'] ?? 0;
         $cost_per_kwh = $_POST['cost_per_kwh'] ?? 0;
         $balance = $_POST['balance'] ?? 0;
         $comments = $_POST['comments'] ?? '';
@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $indexedData[$date] = [
                 'date' => $date,
-                'kwh_cost' => (float)$kwh_cost,
+                'kwh_total' => (float)$kwh_total,
                 'cost_per_kwh' => (float)$cost_per_kwh,
                 'balance' => (float)$balance,
                 'comments' => $comments
@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $year = date('Y', strtotime($entry['date']));
                 $incomingByYear[$year][] = [
                     'date' => $entry['date'],
-                    'kwh_cost' => (float)($entry['kwh_cost'] ?? $entry['kwh_left'] ?? $entry['kwh_total'] ?? 0),
+                    'kwh_total' => (float)($entry['kwh_total'] ?? $entry['kwh_cost'] ?? $entry['kwh_left'] ?? 0),
                     'cost_per_kwh' => (float)($entry['cost_per_kwh'] ?? 0),
                     'balance' => (float)($entry['balance'] ?? 0),
                     'comments' => (string)($entry['comments'] ?? '')
@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if (isset($_GET['msg'])) $message = $_GET['msg'];
 
-$bills = json_decode(file_get_contents($dataFile), true);
+$bills = json_decode(file_get_contents($dataFile), true) ?: [];
 
 // Get list of available years (json files)
 $availableYears = [];
@@ -125,45 +125,49 @@ foreach (glob("*.json") as $filename) {
 }
 rsort($availableYears);
 
-// Pre-calculate computed daily costs based on balance difference
-// Since bills are sorted DESC by date (index 0 is newest), the "next calendar day" is at index $i-1.
-$totalCosts = 0;
-$validCostCount = 0;
+// Get available months in the selected year
+$availableMonths = [];
+foreach ($bills as $bill) {
+    $m = date('m', strtotime($bill['date']));
+    $mName = date('F', strtotime($bill['date']));
+    $availableMonths[$m] = $mName;
+}
+krsort($availableMonths);
+
+// Determine selected month for viewing (default to latest month with data or current month)
+$viewMonth = $_GET['month'] ?? (count($availableMonths) > 0 ? array_key_first($availableMonths) : date('m'));
+
+// Pre-calculate computed daily costs based on balance difference for ALL bills in the year
+// to ensure consistency even when paginated.
 for ($i = 0; $i < count($bills); $i++) {
     $currentBalance = $bills[$i]['balance'] ?? 0;
     $nextDayBalance = (isset($bills[$i-1])) ? ($bills[$i-1]['balance'] ?? 0) : null;
     
     if ($nextDayBalance !== null) {
-        $diff = $currentBalance - $nextDayBalance;
-        $bills[$i]['daily_cost'] = $diff;
-        if ($diff >= 0) {
-            $totalCosts += $diff;
-            $validCostCount++;
-        }
+        $bills[$i]['daily_cost'] = $currentBalance - $nextDayBalance;
     } else {
-        // The newest entry (e.g. Today) has no "Tomorrow" to subtract from yet
         $bills[$i]['daily_cost'] = null;
     }
 }
-$averageCost = $validCostCount > 0 ? $totalCosts / $validCostCount : 0;
 
-// Group bills by month
-$groupedBills = [];
+// Filter bills for the selected month
+$filteredBills = [];
+$totalCosts = 0;
+$validCostCount = 0;
+$monthlyTotal = 0;
+
 foreach ($bills as $bill) {
-    $monthKey = date('Y-m', strtotime($bill['date']));
-    $monthName = date('F Y', strtotime($bill['date']));
-    if (!isset($groupedBills[$monthKey])) {
-        $groupedBills[$monthKey] = [
-            'name' => $monthName,
-            'entries' => [],
-            'total_cost' => 0
-        ];
-    }
-    $groupedBills[$monthKey]['entries'][] = $bill;
-    if ($bill['daily_cost'] !== null && $bill['daily_cost'] >= 0) {
-        $groupedBills[$monthKey]['total_cost'] += $bill['daily_cost'];
+    if (date('m', strtotime($bill['date'])) == $viewMonth) {
+        $filteredBills[] = $bill;
+        if ($bill['daily_cost'] !== null && $bill['daily_cost'] >= 0) {
+            $monthlyTotal += $bill['daily_cost'];
+            $totalCosts += $bill['daily_cost'];
+            $validCostCount++;
+        }
     }
 }
+
+$averageCost = $validCostCount > 0 ? $totalCosts / $validCostCount : 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -187,16 +191,17 @@ foreach ($bills as $bill) {
         .section { margin-top: 40px; border-top: 2px solid #eee; padding-top: 20px; }
         .meralco-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
         .meralco-logo { color: #f36f21; font-weight: 800; font-size: 1.5rem; }
-        .month-header { background-color: #f0f4f8; border-bottom: 2px solid #d1d8e0; }
-        .month-header td { padding: 8px 12px; }
         .high-usage { color: #e74c3c; font-weight: bold; }
         .high-usage::after { content: " 🚩"; }
-        .avg-info { background: #e9f7ef; padding: 10px; border-radius: 4px; margin-bottom: 20px; display: inline-block; border-left: 4px solid #27ae60; }
+        .avg-info { background: #e9f7ef; padding: 10px; border-radius: 4px; display: inline-block; border-left: 4px solid #27ae60; }
         .comments-cell { font-size: 0.9em; color: #666; font-style: italic; }
         .edit-btn { background: #3498db; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 0.8em; cursor: pointer; border: none; margin-left: 10px; }
         .edit-btn:hover { background: #2980b9; }
         .form-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .reset-link { font-size: 0.8em; color: #7f8c8d; text-decoration: underline; cursor: pointer; }
+        .nav-pills { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; }
+        .nav-pill { text-decoration: none; padding: 5px 12px; border-radius: 20px; background: #eee; color: #333; font-weight: bold; font-size: 0.85em; }
+        .nav-pill.active { background: #f36f21; color: #fff; }
     </style>
 </head>
 <body>
@@ -212,20 +217,40 @@ foreach ($bills as $bill) {
         <p class="error"><?php echo $error; ?></p>
     <?php endif; ?>
 
-    <div style="display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px;">
-        <div class="avg-info" style="margin-bottom: 0;">
-            Current Average Daily Cost (<?php echo $viewYear; ?>): <strong>₱<?php echo number_format($averageCost, 2); ?></strong>
+    <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px;">
+        <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap;">
+            <div class="avg-info">
+                Average Daily Cost: <strong>₱<?php echo number_format($averageCost, 2); ?></strong>
+            </div>
+            <div style="font-weight: bold;">
+                Monthly Total: ₱<?php echo number_format($monthlyTotal, 2); ?>
+            </div>
         </div>
 
-        <div class="container" style="flex: 1; padding: 10px 20px;">
-            <label>View Year:</label>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px;">
-                <?php foreach ($availableYears as $year): ?>
-                    <a href="?year=<?php echo $year; ?>" style="text-decoration: none; padding: 5px 10px; border-radius: 4px; background: <?php echo ($year == $viewYear) ? '#f36f21' : '#eee'; ?>; color: <?php echo ($year == $viewYear) ? '#fff' : '#333'; ?>; font-weight: bold; font-size: 0.9em;">
-                        <?php echo $year; ?>
-                    </a>
-                <?php endforeach; ?>
+        <div class="container" style="padding: 15px 20px;">
+            <div style="margin-bottom: 10px;">
+                <label>Year:</label>
+                <div class="nav-pills">
+                    <?php foreach ($availableYears as $year): ?>
+                        <a href="?year=<?php echo $year; ?>" class="nav-pill <?php echo ($year == $viewYear) ? 'active' : ''; ?>">
+                            <?php echo $year; ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
             </div>
+            
+            <?php if (!empty($availableMonths)): ?>
+            <div>
+                <label>Month:</label>
+                <div class="nav-pills">
+                    <?php foreach ($availableMonths as $mCode => $mName): ?>
+                        <a href="?year=<?php echo $viewYear; ?>&month=<?php echo $mCode; ?>" class="nav-pill <?php echo ($mCode == $viewMonth) ? 'active' : ''; ?>">
+                            <?php echo $mName; ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -240,8 +265,8 @@ foreach ($bills as $bill) {
                 <input type="date" id="date" name="date" required value="<?php echo date('Y-m-d'); ?>">
             </div>
             <div class="form-group">
-                <label for="kwh_cost">kWh Available Left:</label>
-                <input type="number" id="kwh_cost" name="kwh_cost" step="0.01" required placeholder="e.g. 824.55">
+                <label for="kwh_total">kWh Available Left:</label>
+                <input type="number" id="kwh_total" name="kwh_total" step="0.01" required placeholder="e.g. 824.55">
             </div>
             <div class="form-group">
                 <label for="cost_per_kwh">Rate per kWh (₱):</label>
@@ -260,7 +285,7 @@ foreach ($bills as $bill) {
     </div>
 
     <div class="section">
-        <h2>Consumption History (<?php echo $viewYear; ?>)</h2>
+        <h2>Consumption History (<?php echo ($availableMonths[$viewMonth] ?? date('F')) . ' ' . $viewYear; ?>)</h2>
         <table>
             <thead>
                 <tr>
@@ -273,38 +298,28 @@ foreach ($bills as $bill) {
                 </tr>
             </thead>
             <tbody>
-                <?php if (empty($groupedBills)): ?>
-                    <tr><td colspan="6">No records found for <?php echo $viewYear; ?>.</td></tr>
+                <?php if (empty($filteredBills)): ?>
+                    <tr><td colspan="6">No records found for this period.</td></tr>
                 <?php else: ?>
-                    <?php foreach ($groupedBills as $month): ?>
-                        <tr class="month-header">
-                            <td colspan="6">
-                                <strong><?php echo htmlspecialchars($month['name']); ?></strong>
-                                <span style="float: right; font-size: 0.85em; font-weight: normal;">
-                                    Monthly Total Cost: ₱<?php echo number_format($month['total_cost'], 2); ?>
-                                </span>
+                    <?php foreach ($filteredBills as $bill): ?>
+                        <?php $isHigh = ($bill['daily_cost'] !== null && $bill['daily_cost'] > 300); ?>
+                        <tr>
+                            <td><?php echo htmlspecialchars($bill['date']); ?></td>
+                            <td><?php echo number_format($bill['kwh_total'] ?? 0, 2); ?> kWh</td>
+                            <td>₱<?php echo number_format($bill['cost_per_kwh'] ?? 0, 2); ?></td>
+                            <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
+                            <td class="<?php echo $isHigh ? 'high-usage' : ''; ?>">
+                                <?php if ($bill['daily_cost'] === null): ?>
+                                    <span style="color: #999; font-style: italic;">Wait for next day...</span>
+                                <?php else: ?>
+                                    ₱<?php echo number_format($bill['daily_cost'], 2); ?>
+                                <?php endif; ?>
+                            </td>
+                            <td class="comments-cell">
+                                <?php echo htmlspecialchars($bill['comments'] ?? ''); ?>
+                                <button class="edit-btn" onclick="editEntry('<?php echo $bill['date']; ?>', <?php echo $bill['kwh_total'] ?? 0; ?>, <?php echo $bill['cost_per_kwh'] ?? 0; ?>, <?php echo $bill['balance'] ?? 0; ?>, <?php echo htmlspecialchars(json_encode($bill['comments'] ?? '')); ?>)">Edit</button>
                             </td>
                         </tr>
-                        <?php foreach ($month['entries'] as $bill): ?>
-                            <?php $isHigh = ($bill['daily_cost'] !== null && $bill['daily_cost'] > 300); ?>
-                            <tr>
-                                <td><?php echo htmlspecialchars($bill['date']); ?></td>
-                                <td><?php echo number_format($bill['kwh_cost'] ?? 0, 2); ?> kWh</td>
-                                <td>₱<?php echo number_format($bill['cost_per_kwh'] ?? 0, 2); ?></td>
-                                <td>₱<?php echo number_format($bill['balance'] ?? 0, 2); ?></td>
-                                <td class="<?php echo $isHigh ? 'high-usage' : ''; ?>">
-                                    <?php if ($bill['daily_cost'] === null): ?>
-                                        <span style="color: #999; font-style: italic;">Wait for next day...</span>
-                                    <?php else: ?>
-                                        ₱<?php echo number_format($bill['daily_cost'], 2); ?>
-                                    <?php endif; ?>
-                                </td>
-                                <td class="comments-cell">
-                                    <?php echo htmlspecialchars($bill['comments'] ?? ''); ?>
-                                    <button class="edit-btn" onclick="editEntry('<?php echo $bill['date']; ?>', <?php echo $bill['kwh_cost'] ?? 0; ?>, <?php echo $bill['cost_per_kwh'] ?? 0; ?>, <?php echo $bill['balance'] ?? 0; ?>, <?php echo htmlspecialchars(json_encode($bill['comments'] ?? '')); ?>)">Edit</button>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
                     <?php endforeach; ?>
                 <?php endif; ?>
             </tbody>
@@ -316,22 +331,17 @@ foreach ($bills as $bill) {
         <form method="POST">
             <div class="form-group">
                 <label for="json_data">Paste your backup JSON here:</label>
-                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "kwh_cost": 824.55, "cost_per_kwh": 14.17, "balance": 11679.82, "comments": "Normal usage"}]'></textarea>
+                <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "kwh_total": 824.55, "cost_per_kwh": 14.17, "balance": 11679.82, "comments": "Normal usage"}]'></textarea>
             </div>
             <button type="submit" name="import_json" style="background: #34495e;">Import Backup</button>
         </form>
         <p><small>Note: This will merge new data with your current records. Matching dates will be updated.</small></p>
     </div>
 
-    <div class="section">
-        <h2>Current Data (JSON Export)</h2>
-        <pre style="background: #eee; padding: 15px; border-radius: 4px; overflow-x: auto;"><?php echo htmlspecialchars(json_encode($bills, JSON_PRETTY_PRINT)); ?></pre>
-    </div>
-
     <script>
         function editEntry(date, kwh, rate, balance, comments) {
             document.getElementById('date').value = date;
-            document.getElementById('kwh_cost').value = kwh;
+            document.getElementById('kwh_total').value = kwh;
             document.getElementById('cost_per_kwh').value = rate;
             document.getElementById('balance').value = balance;
             document.getElementById('comments').value = comments;
