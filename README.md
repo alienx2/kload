@@ -26,7 +26,7 @@ A lightweight, privacy-focused PHP web application designed to help Meralco Kury
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/kload-tracker.git
+   git clone https://github.com/alienx2/kload.git
    ```
 2. Move the files to your web server's public directory (e.g., `www`, `htdocs`).
 3. Open the application in your browser:
