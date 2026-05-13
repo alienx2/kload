@@ -49,10 +49,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 return strcmp($b['date'], $a['date']);
             });
             
+            $monthOfEntry = date('m', strtotime($date));
             file_put_contents($targetFile, json_encode($data, JSON_PRETTY_PRINT));
             
-            if ($yearOfEntry != $viewYear) {
-                header("Location: ?year=$yearOfEntry&msg=Entry saved to $yearOfEntry records.");
+            if ($yearOfEntry != $viewYear || $monthOfEntry != $viewMonth) {
+                header("Location: ?year=$yearOfEntry&month=$monthOfEntry&msg=Entry saved successfully!");
                 exit;
             }
             $message = "Entry saved successfully!";
@@ -202,6 +203,92 @@ $averageCost = $validCostCount > 0 ? $totalCosts / $validCostCount : 0;
         .nav-pills { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; }
         .nav-pill { text-decoration: none; padding: 5px 12px; border-radius: 20px; background: #eee; color: #333; font-weight: bold; font-size: 0.85em; }
         .nav-pill.active { background: #f36f21; color: #fff; }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+            backdrop-filter: blur(2px);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+            animation: modalSlideDown 0.3s ease-out;
+        }
+        @keyframes modalSlideDown {
+            from { transform: translateY(-30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .close-btn {
+            position: absolute;
+            right: 20px;
+            top: 15px;
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close-btn:hover { color: #333; }
+        .add-entry-btn {
+            background: #27ae60;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 6px rgba(39, 174, 96, 0.2);
+            transition: all 0.2s;
+        }
+        .add-entry-btn:hover {
+            background: #219150;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 12px rgba(39, 174, 96, 0.3);
+        }
+        .ai-helper {
+            background: #f0f7ff;
+            border: 1px dashed #3498db;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .copy-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .copy-btn:hover { background: #2980b9; }
+        .prompt-text {
+            font-size: 0.85em;
+            color: #444;
+            background: #fff;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #dcecf7;
+            white-space: pre-wrap;
+            margin: 5px 0;
+        }
     </style>
 </head>
 <body>
@@ -218,13 +305,16 @@ $averageCost = $validCostCount > 0 ? $totalCosts / $validCostCount : 0;
     <?php endif; ?>
 
     <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px;">
-        <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap;">
-            <div class="avg-info">
-                Average Daily Cost: <strong>₱<?php echo number_format($averageCost, 2); ?></strong>
+        <div style="display: flex; gap: 20px; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+            <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap;">
+                <div class="avg-info">
+                    Average Daily Cost: <strong>₱<?php echo number_format($averageCost, 2); ?></strong>
+                </div>
+                <div style="font-weight: bold;">
+                    Monthly Total: ₱<?php echo number_format($monthlyTotal, 2); ?>
+                </div>
             </div>
-            <div style="font-weight: bold;">
-                Monthly Total: ₱<?php echo number_format($monthlyTotal, 2); ?>
-            </div>
+            <button class="add-entry-btn" onclick="openModal()">+ Add New Entry</button>
         </div>
 
         <div class="container" style="padding: 15px 20px;">
@@ -254,34 +344,37 @@ $averageCost = $validCostCount > 0 ? $totalCosts / $validCostCount : 0;
         </div>
     </div>
 
-    <div class="container">
-        <div class="form-header">
-            <h2 id="form-title">Add / Edit Entry</h2>
-            <span class="reset-link" onclick="resetForm()">Clear / New Entry</span>
+    <!-- Add/Edit Entry Modal -->
+    <div id="entryModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal()">&times;</span>
+            <div class="form-header">
+                <h2 id="form-title">Add / Edit Entry</h2>
+            </div>
+            <form method="POST" id="bill-form">
+                <div class="form-group">
+                    <label for="date">Date:</label>
+                    <input type="date" id="date" name="date" required value="<?php echo date('Y-m-d'); ?>">
+                </div>
+                <div class="form-group">
+                    <label for="kwh_total">kWh Available Left:</label>
+                    <input type="number" id="kwh_total" name="kwh_total" step="0.01" required placeholder="e.g. 824.55">
+                </div>
+                <div class="form-group">
+                    <label for="cost_per_kwh">Rate per kWh (₱):</label>
+                    <input type="number" id="cost_per_kwh" name="cost_per_kwh" step="0.01" required placeholder="e.g. 14.17">
+                </div>
+                <div class="form-group">
+                    <label for="balance">Remaining Balance (₱):</label>
+                    <input type="number" id="balance" name="balance" step="0.01" placeholder="e.g. 11679.82">
+                </div>
+                <div class="form-group">
+                    <label for="comments">Comments / Notes:</label>
+                    <textarea id="comments" name="comments" rows="2" placeholder="e.g. Used AC all day..."></textarea>
+                </div>
+                <button type="submit" name="add_bill" style="width: 100%;">Save Entry</button>
+            </form>
         </div>
-        <form method="POST" id="bill-form">
-            <div class="form-group">
-                <label for="date">Date:</label>
-                <input type="date" id="date" name="date" required value="<?php echo date('Y-m-d'); ?>">
-            </div>
-            <div class="form-group">
-                <label for="kwh_total">kWh Available Left:</label>
-                <input type="number" id="kwh_total" name="kwh_total" step="0.01" required placeholder="e.g. 824.55">
-            </div>
-            <div class="form-group">
-                <label for="cost_per_kwh">Rate per kWh (₱):</label>
-                <input type="number" id="cost_per_kwh" name="cost_per_kwh" step="0.01" required placeholder="e.g. 14.17">
-            </div>
-            <div class="form-group">
-                <label for="balance">Remaining Balance (₱):</label>
-                <input type="number" id="balance" name="balance" step="0.01" placeholder="e.g. 11679.82">
-            </div>
-            <div class="form-group">
-                <label for="comments">Comments / Notes:</label>
-                <textarea id="comments" name="comments" rows="2" placeholder="e.g. Used AC all day..."></textarea>
-            </div>
-            <button type="submit" name="add_bill">Save Entry</button>
-        </form>
     </div>
 
     <div class="section">
@@ -328,6 +421,27 @@ $averageCost = $validCostCount > 0 ? $totalCosts / $validCostCount : 0;
 
     <div class="section">
         <h2>Import Data</h2>
+        
+        <div class="ai-helper">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <strong>Gemini Data Extractor Prompt:</strong>
+                <button id="copy-prompt-btn" class="copy-btn" onclick="copyPrompt()">Copy Prompt</button>
+            </div>
+            <div id="ai-prompt" class="prompt-text">Please extract the electricity billing data from this image or text and format it as a JSON array. Each object must have these exact keys: 'date' (YYYY-MM-DD), 'kwh_total', 'cost_per_kwh', 'balance', and 'comments'.
+
+Example format:
+[
+  {
+    "date": "2024-05-01",
+    "kwh_total": 824.55,
+    "cost_per_kwh": 14.17,
+    "balance": 11679.82,
+    "comments": ""
+  }
+]</div>
+            <p><small>Tip: Send this prompt along with your screenshot/text to Gemini, then paste the JSON output below.</small></p>
+        </div>
+
         <form method="POST">
             <div class="form-group">
                 <label for="json_data">Paste your backup JSON here:</label>
@@ -339,6 +453,19 @@ $averageCost = $validCostCount > 0 ? $totalCosts / $validCostCount : 0;
     </div>
 
     <script>
+        const modal = document.getElementById('entryModal');
+
+        function openModal() {
+            modal.style.display = "block";
+            document.body.style.overflow = "hidden";
+        }
+
+        function closeModal() {
+            modal.style.display = "none";
+            document.body.style.overflow = "auto";
+            resetForm();
+        }
+
         function editEntry(date, kwh, rate, balance, comments) {
             document.getElementById('date').value = date;
             document.getElementById('kwh_total').value = kwh;
@@ -346,18 +473,38 @@ $averageCost = $validCostCount > 0 ? $totalCosts / $validCostCount : 0;
             document.getElementById('balance').value = balance;
             document.getElementById('comments').value = comments;
             
-            // Highlight the form
             document.getElementById('form-title').innerText = "Editing Entry: " + date;
-            document.getElementById('bill-form').scrollIntoView({ behavior: 'smooth' });
+            openModal();
             document.getElementById('comments').focus();
         }
 
         function resetForm() {
             document.getElementById('bill-form').reset();
             document.getElementById('form-title').innerText = "Add / Edit Entry";
-            // Restore current date as default
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('date').value = today;
+        }
+
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+
+        function copyPrompt() {
+            const promptText = document.getElementById('ai-prompt').innerText;
+            const btn = document.getElementById('copy-prompt-btn');
+            
+            navigator.clipboard.writeText(promptText).then(() => {
+                const originalText = btn.innerText;
+                btn.innerText = "✓ Copied!";
+                btn.style.background = "#27ae60";
+                
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.style.background = "#3498db";
+                }, 2000);
+            });
         }
     </script>
 
