@@ -64,21 +64,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $jsonInput = $_POST['json_data'] ?? '';
         $decoded = json_decode($jsonInput, true);
         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-            // Group incoming data by year
-            $incomingByYear = [];
+            // 1. Smart Merge: Handle multiple entries per date (e.g., adjustments)
+            $processedIncoming = [];
             foreach ($decoded as $entry) {
                 if (empty($entry['date'])) continue;
+                $date = $entry['date'];
+                
+                $kwh = (float)($entry['kwh_total'] ?? $entry['kwh_cost'] ?? $entry['kwh_left'] ?? 0);
+                $rate = (float)($entry['cost_per_kwh'] ?? 0);
+                $bal = (float)($entry['balance'] ?? 0);
+                $comm = (string)($entry['comments'] ?? '');
+
+                if (!isset($processedIncoming[$date])) {
+                    $processedIncoming[$date] = [
+                        'date' => $date,
+                        'kwh_total' => $kwh,
+                        'cost_per_kwh' => $rate,
+                        'balance' => $bal,
+                        'comments' => $comm
+                    ];
+                } else {
+                    // Merge with existing date entry
+                    if ($kwh > 0) $processedIncoming[$date]['kwh_total'] = $kwh;
+                    if ($rate > 0) $processedIncoming[$date]['cost_per_kwh'] = $rate;
+                    
+                    // Use the latest balance provided in the import (assumes chronological)
+                    // In case of multiple, the last one in the JSON array wins.
+                    $processedIncoming[$date]['balance'] = $bal;
+                    
+                    if (!empty($comm)) {
+                        $existingComm = $processedIncoming[$date]['comments'];
+                        $processedIncoming[$date]['comments'] = $existingComm 
+                            ? (strpos($existingComm, $comm) === false ? $existingComm . " | " . $comm : $existingComm)
+                            : $comm;
+                    }
+                }
+            }
+
+            // 2. Group processed data by year for filing
+            $incomingByYear = [];
+            foreach ($processedIncoming as $entry) {
                 $year = date('Y', strtotime($entry['date']));
-                $incomingByYear[$year][] = [
-                    'date' => $entry['date'],
-                    'kwh_total' => (float)($entry['kwh_total'] ?? $entry['kwh_cost'] ?? $entry['kwh_left'] ?? 0),
-                    'cost_per_kwh' => (float)($entry['cost_per_kwh'] ?? 0),
-                    'balance' => (float)($entry['balance'] ?? 0),
-                    'comments' => (string)($entry['comments'] ?? '')
-                ];
+                $incomingByYear[$year][] = $entry;
             }
             
-            // Merge into existing files
+            // 3. Merge into existing files
             foreach ($incomingByYear as $year => $incomingItems) {
                 $targetFile = $year . '.json';
                 $existingData = [];
@@ -105,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 file_put_contents($targetFile, json_encode($finalData, JSON_PRETTY_PRINT));
             }
-            $message = "Data merged successfully!";
+            $message = "Data merged successfully (Smart Merge applied)!";
         } else {
             $error = "Invalid JSON format.";
         }
@@ -427,7 +457,12 @@ $averageCost = $validCostCount > 0 ? $totalCosts / $validCostCount : 0;
                 <strong>Gemini Data Extractor Prompt:</strong>
                 <button id="copy-prompt-btn" class="copy-btn" onclick="copyPrompt()">Copy Prompt</button>
             </div>
-            <div id="ai-prompt" class="prompt-text">Please extract the electricity billing data from this image or text and format it as a JSON array. Each object must have these exact keys: 'date' (YYYY-MM-DD), 'kwh_total', 'cost_per_kwh', 'balance', and 'comments'.
+            <div id="ai-prompt" class="prompt-text">Please extract the electricity billing data from this image or text and format it as a JSON array. Each object must have these exact keys: 'date' (YYYY-MM-DD), 'kwh_total', 'cost_per_kwh', 'balance', and 'comments'. 
+
+Strict Rules:
+1. 'kwh_total' and 'cost_per_kwh' are REQUIRED. Use numeric values only. NEVER use null. If a value is not found, use 0.
+2. 'comments' must ONLY contain specific "rate adjustment" details if present. If no rate adjustment is found, leave 'comments' as an empty string ("").
+3. NEVER include the filename or phrases like "Data extracted from..." or "Source: ..." in the comments.
 
 Example format:
 [
@@ -444,7 +479,10 @@ Example format:
 
         <form method="POST">
             <div class="form-group">
-                <label for="json_data">Paste your backup JSON here:</label>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px;">
+                    <label for="json_data" style="margin-bottom: 0;">Paste your backup JSON here:</label>
+                    <button type="button" class="copy-btn" style="margin-top: 0; background: #95a5a6;" onclick="pasteToTextarea('json_data')">📋 Paste from Clipboard</button>
+                </div>
                 <textarea id="json_data" name="json_data" rows="8" placeholder='[{"date": "2024-05-01", "kwh_total": 824.55, "cost_per_kwh": 14.17, "balance": 11679.82, "comments": "Normal usage"}]'></textarea>
             </div>
             <button type="submit" name="import_json" style="background: #34495e;">Import Backup</button>
@@ -505,6 +543,15 @@ Example format:
                     btn.style.background = "#3498db";
                 }, 2000);
             });
+        }
+
+        async function pasteToTextarea(id) {
+            try {
+                const text = await navigator.clipboard.readText();
+                document.getElementById(id).value = text;
+            } catch (err) {
+                alert('Unable to read clipboard. Please paste manually.');
+            }
         }
     </script>
 
